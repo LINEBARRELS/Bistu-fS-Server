@@ -174,10 +174,10 @@ io.on('connection',function(socket){
 
 	})
 
-	// socket.on('message',function(data){
- //         socket.broadcast.emit('message',data);
- //         console.log(data);
-	// })
+	socket.on('torrent',function(data){
+        fs.writeFileSync('./t.torrent', data);
+        socket.emit('message','上传成功')
+	})
 
 	// socket.on('priv',function(data){
  //         console.log(data.user);
