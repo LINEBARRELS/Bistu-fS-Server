@@ -11,12 +11,15 @@ var session = require('koa-session');
 var bodyParser = require('koa-bodyparser');
 
 var app = koa();
-var db=new nedb({ filename: './user.json', autoload: true })
-	db.ensureIndex({fieldName:'username',unique:true},function(err){
-		if(err){
-			console.log(err);
-		}
-	})
+var db=new nedb({ filename: './user.json', autoload: true }),
+	torrentRecode=new nedb({ filename: './recode/recode.json', autoload: true });
+
+
+db.ensureIndex({fieldName:'username',unique:true},function(err){
+	if(err){
+		console.log(err);
+	}
+})
 
 
 app.use(serve(__dirname+'/'))
@@ -175,14 +178,32 @@ io.on('connection',function(socket){
 	})
 
 	socket.on('torrent',function(data){
-        fs.writeFileSync('./t.torrent', data);
-        socket.emit('message','上传成功')
+        fs.writeFile('./torrents/'+data.missionName+'.torrent', data.torrent,(err)=>{
+        	if(!err){
+        		var d={
+        			fileName:data.fileName,
+        			missionName:data.missionName
+        		}
+        		torrentRecode.insert(d,(err,newDocs)=>{
+        			if(!err){
+        				socket.emit('message','上传成功')
+        			}
+        		})
+        	}//err
+        	else{
+        		console.log(err);
+        	}
+        });
 	})
 
-	// socket.on('priv',function(data){
- //         console.log(data.user);
- //         io.to(data.user).emit('roommess',data)
-	// })
+
+	socket.on('search',function(data){
+		var reg=new RegExp(data)
+         torrentRecode.find({$or: [{ fileName: reg}, { missionName: reg }]},(err,docs)=>{
+         	socket.emit('searchResult',docs)
+         	// console.log(docs);
+         })
+	})
 
 	socket.on('candidate', function(data) {
 		 socket.to(onLine[data.to]).emit('icecandidate',data)
