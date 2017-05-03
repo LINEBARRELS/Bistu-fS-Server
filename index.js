@@ -14,6 +14,7 @@ var app = koa();
 var db=new nedb({ filename: './user.json', autoload: true }),
 	torrentRecode=new nedb({ filename: './recode/recode.json', autoload: true });
 
+var onLine={}
 
 db.ensureIndex({fieldName:'username',unique:true},function(err){
 	if(err){
@@ -35,15 +36,23 @@ var time = function *(next){
 var select = function (User){
   return new Promise((resolve, reject)=>{
 
+  	if(!onLine[User.username]){
+
+
     db.find({username:User.username},(err,docs)=>{
 		if(!docs[0]||err||docs[0].password!=User.password){
 			reject('fuck')
 		}
 		resolve({loginResult:'success'})
 	})  		
+
+	}else{
+		reject({loginResult:'fails'})
+	}
   }).catch(function(error) {
   	return {loginResult:'fails'}
   });
+
 };
 
 
@@ -55,6 +64,7 @@ var dologin=function *(){
 
 	console.log('用户名',user);
 	console.log('密码',pass);
+
 
 	var User={
 		username:this.get('username'),
@@ -154,8 +164,8 @@ console.log('start');
 
 var io = socket(ht);
 
-var rooms=[];
-var onLine={}
+// var rooms=[];
+
 
 io.on('connection',function(socket){
     console.log(socket.id+' connect!');
@@ -166,23 +176,59 @@ io.on('connection',function(socket){
     	console.log('有用户连接,id:',socket.id,'用户名:',data);
     })
 
-	socket.on('join',function(data){
-         socket.join(data)
-         if(!rooms[data]){
-         	rooms[data] = []
-         }
-         rooms[data].push(socket.id)
-         console.log(socket.id+'join!'+data);
-         console.log(data+' '+rooms[data].length);
+    socket.on('disconnect',function(reason){
+    	for(let i in onLine){
+    		if(onLine[i]===socket.id){
+    			console.log(i,' disconnect');
+    			delete onLine[i]
 
+    		}
+    	}
+    })
+
+	socket.on('join',function(data){
+		if(Array.isArray(data)){
+			data.forEach(function(item,index){
+         		socket.join(item)
+				console.log(socket.id+' join! '+item);
+         	})
+		}else {
+			socket.join(data)
+		}
+         
+                  	
 	})
+
+
+
+
+
+
+
+	socket.on('pieceSearch',function(fileName,piece){
+		console.log(fileName,piece,'块被请求');
+		socket.broadcast.to(fileName).emit('broadcast',{file:fileName,piece:piece})
+	})
+
+	socket.on('pieceSearch_Result',function(data){
+		console.log(data.file,data.piece,'有人回应');
+		socket.broadcast.to(data.file).emit('pieceUpdate',data)
+	})
+
+
+	socket.on('room',function(data){
+		socket.emit('rrr',socket.rooms)
+	})
+
+
 
 	socket.on('torrent',function(data){
         fs.writeFile('./torrents/'+data.missionName+'.torrent', data.torrent,(err)=>{
         	if(!err){
         		var d={
         			fileName:data.fileName,
-        			missionName:data.missionName
+        			missionName:data.missionName,
+        			type:data.fileType
         		}
         		torrentRecode.insert(d,(err,newDocs)=>{
         			if(!err){
@@ -203,6 +249,20 @@ io.on('connection',function(socket){
          	socket.emit('searchResult',docs)
          	// console.log(docs);
          })
+	})
+
+	socket.on('searchType',function(data){
+         torrentRecode.find({type:data},(err,docs)=>{
+         	socket.emit('searchResult',docs)
+         	// console.log(docs);
+         })
+	})
+
+	socket.on('downLoad',function(data){
+		console.log(socket.id,'发起下载',data);
+		fs.readFile('./torrents/'+data+'.torrent', function(err,data){
+			socket.emit('torrentArrive',data)
+		});
 	})
 
 	socket.on('candidate', function(data) {
